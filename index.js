@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
 const app = express();
@@ -21,6 +22,24 @@ const client = new MongoClient(uri, {
   }
 });
 
+
+const verifyJWT = (req,res,next) => {
+   const authorization = req.headers.authorization;
+   if(!authorization){
+         return res.status(401).send({error: true, message: 'unauthorized access'})
+   }
+   const token = authorization.split(' ')[1];
+   console.log('token inside verifyJWT', token);
+   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, decoded) => {
+       if(error){
+          return res.status(403).send({error: true, message: 'unauthorized access'})
+       }
+       req.decoded = decoded;
+       next();
+   })
+}
+
+
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -29,10 +48,20 @@ async function run() {
     const allToysCollection = client.db('toyShop').collection('allToys');
     const addToyCollection = client.db('toyShop').collection('addToy');
 
-    app.get('/allToys', async (req, res) => {
-      
+    // JWT
+
+    app.post('/jwt', (req, res) => {
+      const user = req.body;
+      console.log(user);
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: '1h'});
+      res.send({token});
+    })
+
+
+
+    app.get('/allToys', async (req, res) => { 
       const query = {}
-    
       const options = {
         sort: {'price': -1}
       }
@@ -51,6 +80,7 @@ async function run() {
       res.send(result);
     })
 
+    
 
     app.post('/addToy', async (req, res) => {
       const addToy = req.body;
@@ -60,8 +90,15 @@ async function run() {
     })
 
 
-    app.get('/addToy', async (req, res) => {
-      console.log(req.query.email);
+    app.get('/addToy', verifyJWT, async (req, res) => {
+      // console.log(req.headers.authorization);
+      const decoded = req.decoded;
+      console.log('come back after verify', decoded)
+
+      if(decoded.email !== req.query.email){
+            return res.status(403).send({error: 1, message: 'forbidden access'})
+      }
+
       let query = {};
       if (req.query?.email) {
         query = { email: req.query.email }
